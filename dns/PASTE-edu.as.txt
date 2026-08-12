@@ -1,0 +1,25 @@
+=== COPY FROM HERE — edu.as (Cloudflare / Namecheap / BIND) ===
+
+Type	Name	Priority	Content	TTL
+MX	@	10	mx.edu.as	3600
+A	mx		YOUR_SERVER_IPV4	3600
+TXT	@		v=spf1 mx a:mx.edu.as ~all	3600
+TXT	_dmarc		v=DMARC1; p=none; rua=mailto:postmaster@edu.as	3600
+
+=== BIND zone (optional) ===
+
+$ORIGIN edu.as.
+$TTL 3600
+@        IN  MX  10  mx.edu.as.
+mx       IN  A   YOUR_SERVER_IPV4
+@        IN  TXT "v=spf1 mx a:mx.edu.as ~all"
+_dmarc   IN  TXT "v=DMARC1; p=none; rua=mailto:postmaster@edu.as"
+
+=== NOTES ===
+1. Replace YOUR_SERVER_IPV4 with the public IPv4 of the host that runs PersistMail SMTP on port 25.
+2. Do NOT orange-cloud (proxy) the mx A record — mail requires a raw IP.
+3. Local/dev SMTP stays on :2525. Production MX requires :25 on mx.edu.as.
+4. Set MAIL_IPV4 in .env to stamp the real IP into GET /api/dns/edu.as
+5. Vercel cannot terminate SMTP. Point MX at a VPS / always-on host, not vercel.app.
+
+=== COPY TO HERE ===

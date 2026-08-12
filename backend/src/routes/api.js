@@ -21,6 +21,7 @@ import {
   publicMessage,
 } from '../services/mail.js';
 import { composeSend, replyQuota, sendReply } from '../services/replies.js';
+import { allZones, bindZone, recordsFor, registrarTable } from '../services/dns.js';
 
 export const api = Router();
 
@@ -45,6 +46,21 @@ api.get('/health', (_req, res) => {
 
 api.get('/domains', (_req, res) => {
   res.json(listDomains());
+});
+
+api.get('/dns', (_req, res) => {
+  res.json({ primary: config.primaryDomain, zones: allZones() });
+});
+
+api.get('/dns/:domain', (req, res) => {
+  const domain = String(req.params.domain || '').toLowerCase();
+  const pack = recordsFor(domain);
+  if (!pack) return res.status(404).json({ error: `No MX profile for ${domain}` });
+  res.type('application/json').json({
+    ...pack,
+    bind: bindZone(domain),
+    paste: registrarTable(domain),
+  });
 });
 
 api.post('/addresses', limit(30, 60_000, 'gen'), async (req, res) => {

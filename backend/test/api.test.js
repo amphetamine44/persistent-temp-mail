@@ -48,6 +48,17 @@ test('GET /api/domains includes expanded matrix + MX', async () => {
   assert.equal(data.all.length, 4);
 });
 
+test('GET /api/dns/edu.as returns MX paste records', async () => {
+  const { status, data } = await json('/api/dns/edu.as');
+  assert.equal(status, 200);
+  assert.equal(data.domain, 'edu.as');
+  assert.equal(data.mx, 'mx.edu.as');
+  assert.equal(data.priority, 10);
+  assert.ok(data.rows.some((r) => r.type === 'MX' && r.value === 'mx.edu.as'));
+  assert.match(data.bind, /IN  MX  10  mx\.edu\.as\./);
+  assert.match(data.paste, /MX\t@\t10\tmx\.edu\.as/);
+});
+
 test('SSE stream is deprecated', async () => {
   const res = await fetch(`${BASE}/api/inbox/stream`);
   assert.notEqual(res.status, 200);

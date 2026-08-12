@@ -42,6 +42,7 @@ export const config = {
     user: env('SMTP_OUT_USER', ''),
     pass: env('SMTP_OUT_PASS', ''),
   },
+  mailIpv4: env('MAIL_IPV4', 'YOUR_SERVER_IPV4'),
 };
 
 export function isManagedDomain(domain) {

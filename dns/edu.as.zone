@@ -1,0 +1,7 @@
+; PersistMail DNS — edu.as
+$ORIGIN edu.as.
+$TTL 3600
+@        IN  MX  10  mx.edu.as.
+mx       IN  A   YOUR_SERVER_IPV4
+@        IN  TXT "v=spf1 mx a:mx.edu.as ~all"
+_dmarc   IN  TXT "v=DMARC1; p=none; rua=mailto:postmaster@edu.as"

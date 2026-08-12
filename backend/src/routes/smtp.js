@@ -1,6 +1,6 @@
 import { SMTPServer } from 'smtp-server';
 import { simpleParser } from 'mailparser';
-import { config } from '../config.js';
+import { config, isManagedDomain } from '../config.js';
 import { ingestInbound } from '../services/mail.js';
 
 function collect(stream) {
