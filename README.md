@@ -31,7 +31,7 @@ Copy `.env.example` values into the environment. Defaults:
 
 | key | default |
 |---|---|
-| `PRIMARY_DOMAIN` | persistmail.io |
+| `PRIMARY_DOMAIN` | persistmail.edu.as |
 | `ALT_DOMAINS` | inboxdrop.net,tempkeep.org,mailstash.cc,openbox.email,ghostletter.dev |
 | `PORT` | 3000 |
 | `SMTP_PORT` | 2525 |

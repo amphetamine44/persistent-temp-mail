@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 
 const BASE = process.env.TEST_BASE || 'http://127.0.0.1:3000';
 
+async function domains() {
+  const { status, data } = await json('/api/domains');
+  assert.equal(status, 200);
+  return data;
+}
+
 async function json(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -24,21 +30,23 @@ test('GET /api/health', async () => {
 });
 
 test('GET /api/domains exposes primary + free alternatives', async () => {
-  const { status, data } = await json('/api/domains');
-  assert.equal(status, 200);
-  assert.equal(data.primary, 'persistmail.io');
-  assert.ok(data.alternatives.includes('ghostletter.dev'));
-  assert.equal(data.all.length, 6);
+  const data = await domains();
+  assert.ok(data.primary);
+  assert.ok(data.alternatives.length >= 1);
+  assert.ok(data.all.some((d) => d.primary && d.domain === data.primary));
+  assert.equal(data.all.length, 1 + data.alternatives.length);
 });
 
 test('POST /api/addresses creates a persistent mailbox', async () => {
+  const { primary } = await domains();
   const localPart = `spec.${Date.now()}`;
   const { status, data } = await json('/api/addresses', {
     method: 'POST',
-    body: { localPart, domain: 'persistmail.io' },
+    body: { localPart, domain: primary },
   });
   assert.equal(status, 201);
-  assert.equal(data.address.email, `${localPart}@persistmail.io`);
+  assert.equal(data.address.email, `${localPart}@${primary}`);
+  assert.equal(data.address.isPrimary, true);
   assert.match(data.accessKey, /^ptm_/);
   assert.ok(data.sessionToken);
 });
@@ -72,8 +80,11 @@ test('login reopens the same address', async () => {
 });
 
 test('inbox returns only the authenticated address threads', async () => {
-  const a = await json('/api/addresses', { method: 'POST', body: { domain: 'persistmail.io' } });
-  const b = await json('/api/addresses', { method: 'POST', body: { domain: 'inboxdrop.net' } });
+  const { primary, alternatives } = await domains();
+  const a = await json('/api/addresses', { method: 'POST', body: { domain: primary } });
+  assert.equal(a.status, 201, a.data.error);
+  const b = await json('/api/addresses', { method: 'POST', body: { domain: alternatives[0] } });
+  assert.equal(b.status, 201, b.data.error);
   await json('/api/dev/inject', {
     method: 'POST',
     body: { to: a.data.address.email, from: 'x@y.z', subject: 'only-a', body: 'secret-a' },
