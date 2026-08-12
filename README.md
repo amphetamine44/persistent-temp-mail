@@ -13,9 +13,8 @@ npm start
 ## Layout
 
 ```
-backend/     Express API + SMTP ingest
+backend/     Express API + SMTP ingest + Mongoose
 frontend/    Landing + three-pane inbox
-database/    SQLite (created on first start)
 ```
 
 ## Rules

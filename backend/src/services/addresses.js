@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
-import { db, now } from '../db/index.js';
+import { Address, Session, now, toRow } from '../db/index.js';
 import { config, isManagedDomain } from '../config.js';
 import {
   hintKey,
@@ -11,27 +11,7 @@ import {
   randomLocalPart,
   randomToken,
 } from '../utils/generate.js';
-import { insertWelcome } from './mail.js'; // called after module init — ESM live bindings
-
-const getAddressByEmail = db.prepare('SELECT * FROM addresses WHERE email = ?');
-const getAddressById = db.prepare('SELECT * FROM addresses WHERE id = ?');
-const insertAddress = db.prepare(`
-  INSERT INTO addresses (id, local_part, domain, email, access_key_hash, access_key_hint, created_at, last_access, is_active)
-  VALUES (@id, @local_part, @domain, @email, @access_key_hash, @access_key_hint, @created_at, @last_access, 1)
-`);
-const touchAddress = db.prepare('UPDATE addresses SET last_access = ? WHERE id = ?');
-const insertSession = db.prepare(`
-  INSERT INTO sessions (token, address_id, created_at, expires_at)
-  VALUES (?, ?, ?, ?)
-`);
-const getSession = db.prepare(`
-  SELECT s.token, s.address_id, s.expires_at, a.*
-  FROM sessions s
-  JOIN addresses a ON a.id = s.address_id
-  WHERE s.token = ?
-`);
-const deleteExpired = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
-const deleteSession = db.prepare('DELETE FROM sessions WHERE token = ?');
+import { insertWelcome } from './mail.js';
 
 export function publicAddress(row, extras = {}) {
   if (!row) return null;
@@ -49,7 +29,7 @@ export function publicAddress(row, extras = {}) {
   };
 }
 
-export function createAddress({ localPart, domain } = {}) {
+export async function createAddress({ localPart, domain } = {}) {
   const chosenDomain = String(domain || config.primaryDomain).toLowerCase().trim();
   if (!isManagedDomain(chosenDomain)) {
     const err = new Error('Domain is not available on this service');
@@ -67,12 +47,13 @@ export function createAddress({ localPart, domain } = {}) {
   if (!local) {
     for (let i = 0; i < 12; i += 1) {
       local = randomLocalPart();
-      if (!getAddressByEmail.get(`${local}@${chosenDomain}`)) break;
+      const clash = await Address.findOne({ email: `${local}@${chosenDomain}` }).lean();
+      if (!clash) break;
     }
   }
 
   const email = `${local}@${chosenDomain}`;
-  if (getAddressByEmail.get(email)) {
+  if (await Address.findOne({ email }).lean()) {
     const err = new Error('That address is already taken. Choose another local-part or generate a random one.');
     err.status = 409;
     throw err;
@@ -82,36 +63,47 @@ export function createAddress({ localPart, domain } = {}) {
   const id = uuid();
   const ts = now();
 
-  insertAddress.run({
-    id,
-    local_part: local,
-    domain: chosenDomain,
-    email,
-    access_key_hash: bcrypt.hashSync(accessKey, 10),
-    access_key_hint: hintKey(accessKey),
-    created_at: ts,
-    last_access: ts,
-  });
+  try {
+    await Address.create({
+      _id: id,
+      local_part: local,
+      domain: chosenDomain,
+      email,
+      access_key_hash: bcrypt.hashSync(accessKey, 10),
+      access_key_hint: hintKey(accessKey),
+      created_at: ts,
+      last_access: ts,
+      is_active: true,
+    });
+  } catch (e) {
+    if (e?.code === 11000) {
+      const err = new Error('That address is already taken. Choose another local-part or generate a random one.');
+      err.status = 409;
+      throw err;
+    }
+    throw e;
+  }
 
-  insertWelcome(id, email);
-  const session = issueSession(id);
+  await insertWelcome(id, email);
+  const session = await issueSession(id);
+  const row = toRow(await Address.findById(id));
 
   return {
-    address: publicAddress(getAddressById.get(id), { accessKey, sessionToken: session.token }),
+    address: publicAddress(row, { accessKey, sessionToken: session.token }),
     accessKey,
     sessionToken: session.token,
     expiresAt: session.expiresAt,
   };
 }
 
-export function loginAddress(email, accessKey) {
+export async function loginAddress(email, accessKey) {
   const parsed = parseEmail(email);
   if (!parsed) {
     const err = new Error('Enter a valid email address');
     err.status = 400;
     throw err;
   }
-  const row = getAddressByEmail.get(parsed.email);
+  const row = toRow(await Address.findOne({ email: parsed.email }));
   if (!row || !row.is_active) {
     const err = new Error('Address not found or access key is incorrect');
     err.status = 401;
@@ -122,8 +114,8 @@ export function loginAddress(email, accessKey) {
     err.status = 401;
     throw err;
   }
-  touchAddress.run(now(), row.id);
-  const session = issueSession(row.id);
+  await Address.updateOne({ _id: row.id }, { last_access: now() });
+  const session = await issueSession(row.id);
   return {
     address: publicAddress(row, { sessionToken: session.token }),
     sessionToken: session.token,
@@ -131,34 +123,42 @@ export function loginAddress(email, accessKey) {
   };
 }
 
-export function issueSession(addressId) {
-  deleteExpired.run(now());
+export async function issueSession(addressId) {
+  await Session.deleteMany({ expires_at: { $lt: now() } });
   const token = randomToken(32);
   const created = now();
   const expiresAt = created + config.sessionTtlMs;
-  insertSession.run(token, addressId, created, expiresAt);
+  await Session.create({
+    _id: uuid(),
+    token,
+    address_id: addressId,
+    created_at: created,
+    expires_at: expiresAt,
+  });
   return { token, expiresAt };
 }
 
-export function resolveSession(token) {
+export async function resolveSession(token) {
   if (!token) return null;
-  deleteExpired.run(now());
-  const row = getSession.get(token);
-  if (!row || row.expires_at < now() || !row.is_active) return null;
-  touchAddress.run(now(), row.address_id);
-  return row;
+  await Session.deleteMany({ expires_at: { $lt: now() } });
+  const session = await Session.findOne({ token }).lean();
+  if (!session || session.expires_at < now()) return null;
+  const address = toRow(await Address.findById(session.address_id));
+  if (!address || !address.is_active) return null;
+  await Address.updateOne({ _id: address.id }, { last_access: now() });
+  return { ...address, token: session.token, address_id: session.address_id, expires_at: session.expires_at };
 }
 
-export function logoutSession(token) {
-  if (token) deleteSession.run(token);
+export async function logoutSession(token) {
+  if (token) await Session.deleteOne({ token });
 }
 
-export function findAddressByEmail(email) {
-  return getAddressByEmail.get(normalizeEmail(email));
+export async function findAddressByEmail(email) {
+  return toRow(await Address.findOne({ email: normalizeEmail(email) }));
 }
 
-export function getAddress(id) {
-  return getAddressById.get(id);
+export async function getAddress(id) {
+  return toRow(await Address.findById(id));
 }
 
 export function listDomains() {

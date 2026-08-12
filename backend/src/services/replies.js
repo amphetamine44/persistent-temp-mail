@@ -1,28 +1,20 @@
 import { v4 as uuid } from 'uuid';
-import { db, now } from '../db/index.js';
+import { ReplyLog, now } from '../db/index.js';
 import { config } from '../config.js';
 import { findAddressByEmail } from './addresses.js';
 import { getOwnedMessage, storeMessage } from './mail.js';
 
-const countWindow = db.prepare(`
-  SELECT COUNT(*) AS n FROM reply_log
-  WHERE address_id = ? AND sent_at > ?
-`);
-const insertLog = db.prepare(`
-  INSERT INTO reply_log (id, address_id, message_id, sent_at)
-  VALUES (?, ?, ?, ?)
-`);
-const recentReplies = db.prepare(`
-  SELECT sent_at FROM reply_log
-  WHERE address_id = ? AND sent_at > ?
-  ORDER BY sent_at ASC
-`);
-
-export function replyQuota(addressId) {
+export async function replyQuota(addressId) {
   const windowStart = now() - config.replyWindowMs;
-  const used = countWindow.get(addressId, windowStart).n;
+  const used = await ReplyLog.countDocuments({
+    address_id: addressId,
+    sent_at: { $gt: windowStart },
+  });
   const remaining = Math.max(0, config.replyLimit - used);
-  const oldest = recentReplies.get(addressId, windowStart);
+  const oldest = await ReplyLog.findOne({
+    address_id: addressId,
+    sent_at: { $gt: windowStart },
+  }).sort({ sent_at: 1 }).lean();
   return {
     limit: config.replyLimit,
     used,
@@ -32,8 +24,8 @@ export function replyQuota(addressId) {
   };
 }
 
-export function sendReply(address, { messageId, body, subject }) {
-  const quota = replyQuota(address.id);
+export async function sendReply(address, { messageId, body, subject }) {
+  const quota = await replyQuota(address.id);
   if (quota.remaining <= 0) {
     const err = new Error(`Reply limit reached: ${config.replyLimit} replies per ${quota.windowHours} hours for this address.`);
     err.status = 429;
@@ -53,7 +45,7 @@ export function sendReply(address, { messageId, body, subject }) {
     throw err;
   }
 
-  const parent = getOwnedMessage(address.id, messageId);
+  const parent = await getOwnedMessage(address.id, messageId);
   const dest = parent.direction === 'inbound' ? parent.from_addr : parent.to_addr;
   if (!dest || dest === address.email) {
     const err = new Error('Cannot determine reply recipient');
@@ -62,7 +54,7 @@ export function sendReply(address, { messageId, body, subject }) {
   }
 
   const subj = subject?.trim() || (parent.subject?.startsWith('Re:') ? parent.subject : `Re: ${parent.subject || '(no subject)'}`);
-  const saved = storeMessage({
+  const saved = await storeMessage({
     addressId: address.id,
     direction: 'outbound',
     from: address.email,
@@ -75,11 +67,16 @@ export function sendReply(address, { messageId, body, subject }) {
     isRead: 1,
   });
 
-  insertLog.run(uuid(), address.id, saved.id, now());
+  await ReplyLog.create({
+    _id: uuid(),
+    address_id: address.id,
+    message_id: saved.id,
+    sent_at: now(),
+  });
 
-  const localDest = findAddressByEmail(dest);
+  const localDest = await findAddressByEmail(dest);
   if (localDest) {
-    storeMessage({
+    await storeMessage({
       addressId: localDest.id,
       direction: 'inbound',
       from: address.email,
@@ -103,7 +100,7 @@ export function sendReply(address, { messageId, body, subject }) {
       bodyText: saved.body_text,
       createdAt: saved.created_at,
     },
-    quota: replyQuota(address.id),
+    quota: await replyQuota(address.id),
     deliveredLocally: Boolean(localDest),
   };
 }

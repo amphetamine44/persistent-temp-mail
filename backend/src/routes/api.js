@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { config } from '../config.js';
-import { db } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { limit } from '../middleware/rateLimit.js';
 import {
@@ -25,31 +24,21 @@ import { replyQuota, sendReply } from '../services/replies.js';
 
 export const api = Router();
 
-function sqliteStatus() {
-  try {
-    const row = db.prepare('SELECT 1 AS ok').get();
-    return row?.ok === 1 ? 'connected' : 'error';
-  } catch {
-    return 'error';
-  }
-}
-
 function mongoStatus() {
   if (!process.env.MONGODB_URI) return 'skipped';
   return mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
 }
 
 api.get('/health', (_req, res) => {
-  const sqlite = sqliteStatus();
   const mongodb = mongoStatus();
   res.json({
-    ok: sqlite === 'connected',
+    ok: mongodb === 'connected',
     service: 'Persistent Temp Mail Service',
     version: '2.0.0',
     smtpPort: config.smtpPort,
     domains: config.domains.length,
     serverless: Boolean(process.env.VERCEL),
-    db: { sqlite, mongodb },
+    db: { mongodb },
   });
 });
 
@@ -57,10 +46,10 @@ api.get('/domains', (_req, res) => {
   res.json(listDomains());
 });
 
-api.post('/addresses', limit(30, 60_000, 'gen'), (req, res) => {
+api.post('/addresses', limit(30, 60_000, 'gen'), async (req, res) => {
   try {
     const { localPart, domain } = req.body || {};
-    const result = createAddress({ localPart, domain });
+    const result = await createAddress({ localPart, domain });
     res.status(201).json({
       ...result,
       warning: 'Store the access key now. It cannot be recovered later.',
@@ -70,41 +59,41 @@ api.post('/addresses', limit(30, 60_000, 'gen'), (req, res) => {
   }
 });
 
-api.post('/auth/login', limit(20, 60_000, 'login'), (req, res) => {
+api.post('/auth/login', limit(20, 60_000, 'login'), async (req, res) => {
   try {
     const { email, accessKey } = req.body || {};
-    res.json(loginAddress(email, accessKey));
+    res.json(await loginAddress(email, accessKey));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
 });
 
-api.post('/auth/logout', requireAuth, (req, res) => {
-  logoutSession(req.sessionToken);
+api.post('/auth/logout', requireAuth, async (req, res) => {
+  await logoutSession(req.sessionToken);
   res.json({ ok: true });
 });
 
-api.get('/me', requireAuth, (req, res) => {
+api.get('/me', requireAuth, async (req, res) => {
   res.json({
     address: publicAddress(req.address),
-    quota: replyQuota(req.address.id),
+    quota: await replyQuota(req.address.id),
   });
 });
 
-api.get('/inbox', requireAuth, (req, res) => {
+api.get('/inbox', requireAuth, async (req, res) => {
   res.json({
     address: publicAddress(req.address),
-    quota: replyQuota(req.address.id),
-    ...listInbox(req.address.id),
+    quota: await replyQuota(req.address.id),
+    ...(await listInbox(req.address.id)),
   });
 });
 
-api.get('/inbox/poll', requireAuth, (req, res) => {
+api.get('/inbox/poll', requireAuth, async (req, res) => {
   const since = Number(req.query.since || 0);
   res.json({
     now: Date.now(),
-    messages: messagesSince(req.address.id, since),
-    quota: replyQuota(req.address.id),
+    messages: await messagesSince(req.address.id, since),
+    quota: await replyQuota(req.address.id),
   });
 });
 
@@ -130,29 +119,29 @@ api.get('/inbox/stream', requireAuth, (req, res) => {
   });
 });
 
-api.get('/threads/:threadId', requireAuth, (req, res) => {
+api.get('/threads/:threadId', requireAuth, async (req, res) => {
   try {
     res.json({
-      quota: replyQuota(req.address.id),
-      ...getThread(req.address.id, req.params.threadId),
+      quota: await replyQuota(req.address.id),
+      ...(await getThread(req.address.id, req.params.threadId)),
     });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
 });
 
-api.get('/messages/:id', requireAuth, (req, res) => {
+api.get('/messages/:id', requireAuth, async (req, res) => {
   try {
-    const row = getOwnedMessage(req.address.id, req.params.id);
-    res.json({ message: publicMessage(row), quota: replyQuota(req.address.id) });
+    const row = await getOwnedMessage(req.address.id, req.params.id);
+    res.json({ message: publicMessage(row), quota: await replyQuota(req.address.id) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
 });
 
-api.post('/messages/:id/reply', requireAuth, limit(12, 60_000, 'reply'), (req, res) => {
+api.post('/messages/:id/reply', requireAuth, limit(12, 60_000, 'reply'), async (req, res) => {
   try {
-    const result = sendReply(req.address, {
+    const result = await sendReply(req.address, {
       messageId: req.params.id,
       body: req.body?.body,
       subject: req.body?.subject,
@@ -163,18 +152,18 @@ api.post('/messages/:id/reply', requireAuth, limit(12, 60_000, 'reply'), (req, r
   }
 });
 
-api.get('/quota', requireAuth, (req, res) => {
-  res.json(replyQuota(req.address.id));
+api.get('/quota', requireAuth, async (req, res) => {
+  res.json(await replyQuota(req.address.id));
 });
 
 if (config.devInject) {
-  api.post('/dev/inject', limit(60, 60_000, 'inject'), (req, res) => {
+  api.post('/dev/inject', limit(60, 60_000, 'inject'), async (req, res) => {
     try {
       const { to, from, fromName, subject, body, html } = req.body || {};
       if (!to || !from) {
         return res.status(400).json({ error: 'to and from are required' });
       }
-      const saved = ingestInbound({
+      const saved = await ingestInbound({
         to,
         from,
         fromName,

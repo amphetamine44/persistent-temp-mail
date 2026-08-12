@@ -7,15 +7,13 @@
   "scripts": {
     "start": "node --env-file=.env backend/server.js",
     "dev": "node --watch --env-file=.env backend/server.js",
-    "test": "node --test --test-timeout=15000 backend/test/*.test.js",
-    "db:reset": "rm -f database/mail.db database/mail.db-wal database/mail.db-shm"
+    "test": "node --test --test-timeout=15000 backend/test/*.test.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "mailparser": "^3.7.2",

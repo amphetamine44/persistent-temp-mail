@@ -6,16 +6,20 @@ export function bearer(req) {
   return req.query.token || req.headers['x-session-token'] || '';
 }
 
-export function requireAuth(req, res, next) {
-  const token = bearer(req);
-  const session = resolveSession(token);
-  if (!session) {
-    return res.status(401).json({ error: 'Session expired or invalid. Sign in with your address and access key.' });
+export async function requireAuth(req, res, next) {
+  try {
+    const token = bearer(req);
+    const session = await resolveSession(token);
+    if (!session) {
+      return res.status(401).json({ error: 'Session expired or invalid. Sign in with your address and access key.' });
+    }
+    req.sessionToken = token;
+    req.address = await getAddress(session.address_id);
+    if (!req.address) {
+      return res.status(401).json({ error: 'Address no longer exists' });
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-  req.sessionToken = token;
-  req.address = getAddress(session.address_id);
-  if (!req.address) {
-    return res.status(401).json({ error: 'Address no longer exists' });
-  }
-  next();
 }

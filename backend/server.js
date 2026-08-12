@@ -4,7 +4,6 @@ import path from 'node:path';
 import { config } from './src/config.js';
 import { api } from './src/routes/api.js';
 import { startSmtp } from './src/routes/smtp.js';
-import './src/db/index.js';
 import connectDB from './src/db/connectDB.js';
 
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -46,7 +45,7 @@ if (!isServerless) {
     console.log(`[http] PersistMail v2.0.0  http://${config.host}:${config.port}`);
     console.log(`[http] primary domain      ${config.primaryDomain}`);
     console.log(`[http] alt domains         ${config.altDomains.join(', ')}`);
-    console.log(`[http] database            ${config.databasePath}`);
+    console.log(`[http] database            mongoose ${process.env.MONGODB_URI ? 'configured' : 'not configured'}`);
   });
 
   startSmtp().catch((err) => {

@@ -39,7 +39,7 @@ export function startSmtp() {
         let stored = 0;
         for (const to of unique) {
           try {
-            ingestInbound({
+            await ingestInbound({
               to,
               from: parsed.from?.text || session.envelope?.mailFrom?.address || 'unknown@unknown',
               fromName: parsed.from?.value?.[0]?.name || '',

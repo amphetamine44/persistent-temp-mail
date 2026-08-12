@@ -28,7 +28,6 @@ export const config = {
   replyLimit: Number(env('REPLY_LIMIT', '3')),
   replyWindowMs: Number(env('REPLY_WINDOW_HOURS', '24')) * 60 * 60 * 1000,
   devInject: env('DEV_INJECT', '1') === '1',
-  databasePath: path.resolve(ROOT, env('DATABASE_PATH', './database/mail.db')),
   frontendDir: path.resolve(ROOT, 'frontend'),
 };
 

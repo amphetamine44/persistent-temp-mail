@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 
 const BASE = process.env.TEST_BASE || 'http://127.0.0.1:3000';
 
+async function mongoReady() {
+  const { data } = await json('/api/health');
+  return data.db?.mongodb === 'connected';
+}
+
 async function domains() {
   const { status, data } = await json('/api/domains');
   assert.equal(status, 200);
@@ -24,9 +29,11 @@ async function json(path, opts = {}) {
 test('GET /api/health', async () => {
   const { status, data } = await json('/api/health');
   assert.equal(status, 200);
-  assert.equal(data.ok, true);
   assert.equal(data.version, '2.0.0');
   assert.equal(data.domains, 6);
+  assert.ok(data.db);
+  assert.ok(['connected', 'skipped', 'disconnected'].includes(data.db.mongodb));
+  if (data.db.mongodb === 'connected') assert.equal(data.ok, true);
 });
 
 test('GET /api/domains exposes primary + free alternatives', async () => {
@@ -37,7 +44,8 @@ test('GET /api/domains exposes primary + free alternatives', async () => {
   assert.equal(data.all.length, 1 + data.alternatives.length);
 });
 
-test('POST /api/addresses creates a persistent mailbox', async () => {
+test('POST /api/addresses creates a persistent mailbox', async (t) => {
+  if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const { primary } = await domains();
   const localPart = `spec.${Date.now()}`;
   const { status, data } = await json('/api/addresses', {
@@ -51,7 +59,8 @@ test('POST /api/addresses creates a persistent mailbox', async () => {
   assert.ok(data.sessionToken);
 });
 
-test('duplicate local-part on same domain is rejected', async () => {
+test('duplicate local-part on same domain is rejected', async (t) => {
+  if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const localPart = `dup.${Date.now()}`;
   const first = await json('/api/addresses', {
     method: 'POST',
@@ -65,7 +74,8 @@ test('duplicate local-part on same domain is rejected', async () => {
   assert.equal(second.status, 409);
 });
 
-test('login reopens the same address', async () => {
+test('login reopens the same address', async (t) => {
+  if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const created = await json('/api/addresses', {
     method: 'POST',
     body: { domain: 'openbox.email' },
@@ -79,7 +89,8 @@ test('login reopens the same address', async () => {
   assert.equal(login.data.address.email, email);
 });
 
-test('inbox returns only the authenticated address threads', async () => {
+test('inbox returns only the authenticated address threads', async (t) => {
+  if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const { primary, alternatives } = await domains();
   const a = await json('/api/addresses', { method: 'POST', body: { domain: primary } });
   assert.equal(a.status, 201, a.data.error);
@@ -102,7 +113,8 @@ test('inbox returns only the authenticated address threads', async () => {
   assert.equal(inboxA.data.address.email, a.data.address.email);
 });
 
-test('reply limit is 3 per 24 hours', async () => {
+test('reply limit is 3 per 24 hours', async (t) => {
+  if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const created = await json('/api/addresses', { method: 'POST', body: { domain: 'mailstash.cc' } });
   const token = created.data.sessionToken;
   const injected = await json('/api/dev/inject', {

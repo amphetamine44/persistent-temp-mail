@@ -1,32 +1,7 @@
 import { v4 as uuid } from 'uuid';
-import { db, now } from '../db/index.js';
+import { Message, now } from '../db/index.js';
 import { extractEmail, extractName, normalizeEmail } from '../utils/generate.js';
 import { findAddressByEmail } from './addresses.js';
-
-const insertMessage = db.prepare(`
-  INSERT INTO messages (
-    id, address_id, thread_id, direction, from_addr, from_name, to_addr,
-    subject, body_text, body_html, headers_json, in_reply_to, created_at, is_read
-  ) VALUES (
-    @id, @address_id, @thread_id, @direction, @from_addr, @from_name, @to_addr,
-    @subject, @body_text, @body_html, @headers_json, @in_reply_to, @created_at, @is_read
-  )
-`);
-
-const getMessage = db.prepare('SELECT * FROM messages WHERE id = ?');
-const listByAddress = db.prepare(`
-  SELECT * FROM messages WHERE address_id = ? ORDER BY created_at DESC
-`);
-const listThread = db.prepare(`
-  SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC
-`);
-const markRead = db.prepare('UPDATE messages SET is_read = 1 WHERE thread_id = ? AND address_id = ?');
-const unreadCount = db.prepare(`
-  SELECT COUNT(*) AS n FROM messages WHERE address_id = ? AND is_read = 0 AND direction = 'inbound'
-`);
-const latestByAddress = db.prepare(`
-  SELECT * FROM messages WHERE address_id = ? AND created_at > ? ORDER BY created_at ASC
-`);
 
 const listeners = new Set();
 
@@ -44,10 +19,17 @@ function emit(addressId, event, data) {
   }
 }
 
+function asRow(doc) {
+  if (!doc) return null;
+  const o = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
+  o.id = o._id;
+  return o;
+}
+
 export function publicMessage(row) {
   if (!row) return null;
   return {
-    id: row.id,
+    id: row.id || row._id,
     addressId: row.address_id,
     threadId: row.thread_id,
     direction: row.direction,
@@ -63,7 +45,7 @@ export function publicMessage(row) {
   };
 }
 
-export function storeMessage({
+export async function storeMessage({
   addressId,
   direction,
   from,
@@ -77,10 +59,10 @@ export function storeMessage({
   threadId,
   isRead = 0,
 }) {
-  const parent = inReplyTo ? getMessage.get(inReplyTo) : null;
+  const parent = inReplyTo ? asRow(await Message.findById(inReplyTo)) : null;
   const id = uuid();
   const row = {
-    id,
+    _id: id,
     address_id: addressId,
     thread_id: threadId || parent?.thread_id || id,
     direction,
@@ -93,17 +75,17 @@ export function storeMessage({
     headers_json: headers ? JSON.stringify(headers) : null,
     in_reply_to: inReplyTo || parent?.id || null,
     created_at: now(),
-    is_read: isRead,
+    is_read: Boolean(isRead),
   };
-  insertMessage.run(row);
-  const saved = getMessage.get(id);
+  await Message.create(row);
+  const saved = asRow(await Message.findById(id));
   emit(addressId, 'message', publicMessage(saved));
   return saved;
 }
 
-export function ingestInbound({ to, from, fromName, subject, bodyText, bodyHtml, headers, inReplyTo }) {
+export async function ingestInbound({ to, from, fromName, subject, bodyText, bodyHtml, headers, inReplyTo }) {
   const dest = extractEmail(to);
-  const address = findAddressByEmail(dest);
+  const address = await findAddressByEmail(dest);
   if (!address) {
     const err = new Error(`No mailbox for ${dest}`);
     err.status = 404;
@@ -123,11 +105,11 @@ export function ingestInbound({ to, from, fromName, subject, bodyText, bodyHtml,
   });
 }
 
-export function insertWelcome(addressId, email) {
+export async function insertWelcome(addressId, email) {
   return storeMessage({
     addressId,
     direction: 'inbound',
-    from: 'postmaster@persistmail.io',
+    from: 'postmaster@persistmail.edu.as',
     fromName: 'PersistMail',
     to: email,
     subject: 'Your persistent mailbox is live',
@@ -146,8 +128,8 @@ export function insertWelcome(addressId, email) {
   });
 }
 
-export function listInbox(addressId) {
-  const rows = listByAddress.all(addressId);
+export async function listInbox(addressId) {
+  const rows = (await Message.find({ address_id: addressId }).sort({ created_at: -1 })).map(asRow);
   const threads = new Map();
   for (const row of rows) {
     if (!threads.has(row.thread_id)) {
@@ -168,21 +150,26 @@ export function listInbox(addressId) {
       });
     }
   }
+  const unread = await Message.countDocuments({
+    address_id: addressId,
+    is_read: false,
+    direction: 'inbound',
+  });
   return {
-    unread: unreadCount.get(addressId).n,
+    unread,
     threads: [...threads.values()],
     messages: rows.map(publicMessage),
   };
 }
 
-export function getThread(addressId, threadId) {
-  const rows = listThread.all(threadId).filter((r) => r.address_id === addressId);
+export async function getThread(addressId, threadId) {
+  const rows = (await Message.find({ thread_id: threadId, address_id: addressId }).sort({ created_at: 1 })).map(asRow);
   if (!rows.length) {
     const err = new Error('Thread not found');
     err.status = 404;
     throw err;
   }
-  markRead.run(threadId, addressId);
+  await Message.updateMany({ thread_id: threadId, address_id: addressId }, { is_read: true });
   return {
     threadId,
     subject: rows[0].subject || '(no subject)',
@@ -190,8 +177,8 @@ export function getThread(addressId, threadId) {
   };
 }
 
-export function getOwnedMessage(addressId, messageId) {
-  const row = getMessage.get(messageId);
+export async function getOwnedMessage(addressId, messageId) {
+  const row = asRow(await Message.findById(messageId));
   if (!row || row.address_id !== addressId) {
     const err = new Error('Message not found');
     err.status = 404;
@@ -200,6 +187,10 @@ export function getOwnedMessage(addressId, messageId) {
   return row;
 }
 
-export function messagesSince(addressId, since) {
-  return latestByAddress.all(addressId, Number(since) || 0).map(publicMessage);
+export async function messagesSince(addressId, since) {
+  const rows = await Message.find({
+    address_id: addressId,
+    created_at: { $gt: Number(since) || 0 },
+  }).sort({ created_at: 1 });
+  return rows.map((r) => publicMessage(asRow(r)));
 }
