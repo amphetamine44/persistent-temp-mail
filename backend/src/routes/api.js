@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { config } from '../config.js';
+import { db } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { limit } from '../middleware/rateLimit.js';
 import {
@@ -23,13 +25,31 @@ import { replyQuota, sendReply } from '../services/replies.js';
 
 export const api = Router();
 
+function sqliteStatus() {
+  try {
+    const row = db.prepare('SELECT 1 AS ok').get();
+    return row?.ok === 1 ? 'connected' : 'error';
+  } catch {
+    return 'error';
+  }
+}
+
+function mongoStatus() {
+  if (!process.env.MONGODB_URI) return 'skipped';
+  return mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+}
+
 api.get('/health', (_req, res) => {
+  const sqlite = sqliteStatus();
+  const mongodb = mongoStatus();
   res.json({
-    ok: true,
+    ok: sqlite === 'connected',
     service: 'Persistent Temp Mail Service',
     version: '2.0.0',
     smtpPort: config.smtpPort,
     domains: config.domains.length,
+    serverless: Boolean(process.env.VERCEL),
+    db: { sqlite, mongodb },
   });
 });
 

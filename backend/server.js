@@ -5,6 +5,9 @@ import { config } from './src/config.js';
 import { api } from './src/routes/api.js';
 import { startSmtp } from './src/routes/smtp.js';
 import './src/db/index.js';
+import connectDB from './src/db/connectDB.js';
+
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 const app = express();
 app.set('trust proxy', true);
@@ -36,22 +39,28 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal error' });
 });
 
-const server = app.listen(config.port, config.host, () => {
-  console.log(`[http] PersistMail v2.0.0  http://${config.host}:${config.port}`);
-  console.log(`[http] primary domain      ${config.primaryDomain}`);
-  console.log(`[http] alt domains         ${config.altDomains.join(', ')}`);
-  console.log(`[http] database            ${config.databasePath}`);
-});
+await connectDB();
 
-startSmtp().catch((err) => {
-  console.error('[smtp] failed to bind:', err.message);
-});
+if (!isServerless) {
+  const server = app.listen(config.port, config.host, () => {
+    console.log(`[http] PersistMail v2.0.0  http://${config.host}:${config.port}`);
+    console.log(`[http] primary domain      ${config.primaryDomain}`);
+    console.log(`[http] alt domains         ${config.altDomains.join(', ')}`);
+    console.log(`[http] database            ${config.databasePath}`);
+  });
 
-function shutdown(sig) {
-  console.log(`[sys] ${sig} — shutting down`);
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(0), 1500).unref();
+  startSmtp().catch((err) => {
+    console.error('[smtp] failed to bind:', err.message);
+  });
+
+  function shutdown(sig) {
+    console.log(`[sys] ${sig} — shutting down`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1500).unref();
+  }
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+export default app;

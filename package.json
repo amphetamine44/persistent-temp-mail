@@ -19,6 +19,7 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "mailparser": "^3.7.2",
+    "mongoose": "^8.24.3",
     "nodemailer": "^6.9.16",
     "smtp-server": "^3.13.6",
     "uuid": "^11.0.5"
