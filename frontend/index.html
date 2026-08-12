@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PersistMail — Persistent Temp Mail v2.0.0</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-bg"></div>
+  <div class="wrap">
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M3 7.5 12 13l9-5.5V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z" fill="#111"/>
+            <path d="M3 7 12 12.5 21 7V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1Z" fill="#111" opacity=".7"/>
+          </svg>
+        </span>
+        <span class="brand-name">PersistMail <span>/ temp that stays</span></span>
+      </a>
+      <div class="ver">v2.0.0</div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="kicker">Persistent Temp Mail Service</p>
+        <h1>One address.<br>Every platform.<br><em>Yours to keep.</em></h1>
+        <p class="lede">
+          Generate unlimited mailboxes on the primary domain or any free alternative.
+          Each address is stored server-side so you can sign back in and reuse it anywhere —
+          signups, receipts, 2FA fallbacks — without losing the inbox.
+        </p>
+        <div class="stats">
+          <div class="stat"><b id="stat-domains">6</b><span>available domains</span></div>
+          <div class="stat"><b>∞</b><span>address generation</span></div>
+          <div class="stat"><b>3 / 24h</b><span>outbound replies</span></div>
+          <div class="stat"><b id="stat-ver">2.0.0</b><span>service version</span></div>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <div class="tabs">
+          <button class="tab active" data-tab="generate" type="button">Generate</button>
+          <button class="tab" data-tab="login" type="button">Sign in</button>
+        </div>
+
+        <div id="panel-generate">
+          <h2>Create a reusable mailbox</h2>
+          <p class="hint">Pick a domain, optionally claim a local-part, or mint a random one. Unlimited.</p>
+
+          <div class="field">
+            <label>Domain</label>
+            <div class="domains" id="domains"></div>
+          </div>
+
+          <div class="field">
+            <label>Local-part (optional)</label>
+            <div class="addr-input">
+              <input id="local-part" type="text" placeholder="custom.name" autocomplete="off" spellcheck="false" />
+              <span class="at">@</span>
+              <input type="text" value="selected domain" disabled style="opacity:.6" id="domain-mirror" />
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-lime" id="btn-gen" type="button">Reserve address</button>
+            <button class="btn btn-ghost" id="btn-random" type="button">Generate random</button>
+          </div>
+          <p class="flash" id="gen-error"></p>
+
+          <div class="issued" id="issued">
+            <div class="mail" id="issued-email"></div>
+            <div class="keybox" id="issued-key"></div>
+            <p class="warn-key">This access key is shown once. It is the only way to reopen this inbox from another device.</p>
+            <div class="btn-row" style="margin-top:12px">
+              <button class="btn btn-lime" id="open-inbox" type="button">Open inbox</button>
+              <button class="btn btn-ghost" id="copy-email" type="button">Copy address</button>
+              <button class="btn btn-ghost" id="copy-key" type="button">Copy key</button>
+            </div>
+          </div>
+        </div>
+
+        <form id="panel-login" style="display:none">
+          <h2>Reopen a saved address</h2>
+          <p class="hint">Use the email plus the access key issued when it was created. Works across platforms.</p>
+          <div class="field">
+            <label>Email</label>
+            <input id="login-email" type="email" placeholder="silent.otter4821@persistmail.io" required />
+          </div>
+          <div class="field">
+            <label>Access key</label>
+            <input id="login-key" type="password" placeholder="ptm_…" required />
+          </div>
+          <button class="btn btn-lime btn-block" type="submit">Sign in to inbox</button>
+          <p class="flash" id="login-error"></p>
+        </form>
+      </aside>
+    </section>
+
+    <section class="vault">
+      <h3>Device vault · <span id="vault-count">0</span> addresses</h3>
+      <div class="vault-list" id="vault-list"></div>
+    </section>
+  </div>
+  <script type="module">
+    import { api } from '/js/api.js';
+    const mirror = document.getElementById('domain-mirror');
+    const obs = new MutationObserver(() => {
+      const active = document.querySelector('.domain.active .dn');
+      if (active) mirror.value = active.textContent;
+    });
+    const box = document.getElementById('domains');
+    obs.observe(box, { childList: true, subtree: true, attributes: true });
+    document.getElementById('domains').addEventListener('click', () => {
+      const active = document.querySelector('.domain.active .dn');
+      if (active) mirror.value = active.textContent;
+    });
+    try {
+      const d = await api.domains();
+      mirror.value = d.primary;
+    } catch { /* handled in landing.js */ }
+  </script>
+  <script type="module" src="/js/landing.js"></script>
+</body>
+</html>
