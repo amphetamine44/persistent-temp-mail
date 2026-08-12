@@ -28,22 +28,26 @@ export const api = {
   thread: (token, id) => request(`/api/threads/${id}`, { token }),
   reply: (token, messageId, body, subject) =>
     request(`/api/messages/${messageId}/reply`, { method: 'POST', token, body: { body, subject } }),
+  send: (token, payload) => request('/api/send', { method: 'POST', token, body: payload }),
+  remove: (token, id) => request(`/api/messages/${id}`, { method: 'DELETE', token }),
   quota: (token) => request('/api/quota', { token }),
   inject: (payload) => request('/api/dev/inject', { method: 'POST', body: payload }),
   poll: (token, since) => request(`/api/inbox/poll?since=${since}`, { token }),
 };
 
-export function openStream(token, onEvent) {
-  const url = `/api/inbox/stream?token=${encodeURIComponent(token)}`;
-  const es = new EventSource(url);
-  es.addEventListener('message', (e) => {
-    try { onEvent('message', JSON.parse(e.data)); } catch { /* ignore */ }
-  });
-  es.addEventListener('hello', (e) => {
-    try { onEvent('hello', JSON.parse(e.data)); } catch { /* ignore */ }
-  });
-  es.onerror = () => { /* browser auto-reconnects */ };
-  return es;
+export function startPoll(fn, intervalMs = 4000) {
+  let stopped = false;
+  let timer = null;
+  const tick = async () => {
+    if (stopped) return;
+    try { await fn(); } catch { /* next tick */ }
+    if (!stopped) timer = setTimeout(tick, intervalMs);
+  };
+  tick();
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
 }
 
 export function fmtTime(ts) {

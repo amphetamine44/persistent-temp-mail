@@ -17,7 +17,7 @@
   --ok: #3dd68c;
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: "Sora", "Segoe UI", system-ui, sans-serif;
+  --sans: "IBM Plex Sans Arabic", "Sora", "Segoe UI", system-ui, sans-serif;
   --radius: 16px;
 }
 
@@ -244,6 +244,20 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
 .limit-note.warn { color: var(--warn); }
 
 .copyok { color: var(--ok); font-size: 12px; }
+.lbl {
+  display: block; font-size: 11px; color: var(--faint); letter-spacing: 0.08em;
+  text-transform: uppercase; margin-bottom: 7px;
+}
+
+html[dir="rtl"] body { letter-spacing: 0; }
+html[dir="rtl"] .kicker { letter-spacing: 0.08em; }
+html[dir="rtl"] .domain,
+html[dir="rtl"] .addr,
+html[dir="rtl"] .thread { text-align: right; }
+html[dir="rtl"] .addr.active { box-shadow: inset -3px 0 0 var(--lime); }
+html[dir="rtl"] .col { border-right: 0; border-left: 1px solid var(--line); }
+html[dir="rtl"] .col:last-child { border-left: 0; }
+html[dir="ltr"] { font-family: "Sora", "Segoe UI", system-ui, sans-serif; }
 
 @media (max-width: 980px) {
   .hero { grid-template-columns: 1fr; }

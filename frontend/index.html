@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PersistMail — Persistent Temp Mail v2.0.0</title>
+  <title>بريد مستمر — PersistMail v2.0.0</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -21,110 +21,93 @@
             <path d="M3 7 12 12.5 21 7V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1Z" fill="#111" opacity=".7"/>
           </svg>
         </span>
-        <span class="brand-name">PersistMail <span>/ temp that stays</span></span>
+        <span class="brand-name">PersistMail <span data-i18n="brandSub">/ بريد مؤقت يبقى</span></span>
       </a>
-      <div class="ver">v2.0.0</div>
+      <div class="ibar-right">
+        <button class="btn btn-ghost" id="lang-toggle" type="button" style="padding:7px 12px;font-size:12px">English</button>
+        <div class="ver">v2.0.0</div>
+      </div>
     </header>
 
     <section class="hero">
       <div>
-        <p class="kicker">Persistent Temp Mail Service</p>
-        <h1>One address.<br>Every platform.<br><em>Yours to keep.</em></h1>
-        <p class="lede">
-          Generate unlimited mailboxes on the primary domain or any free alternative.
-          Each address is stored server-side so you can sign back in and reuse it anywhere —
-          signups, receipts, 2FA fallbacks — without losing the inbox.
+        <p class="kicker" data-i18n="kicker">خدمة البريد المؤقت المستمر</p>
+        <h1><span data-i18n="hero1">عنوان واحد.</span><br><span data-i18n="hero2">كل المنصات.</span><br><em data-i18n="hero3">يبقى لك.</em></h1>
+        <p class="lede" data-i18n="lede">
+          أنشئ صناديق بلا حد على النطاق الأساسي أو أي نطاق بديل. كل عنوان يُحفظ في الخادم لتعيد استخدامه في أي منصة دون فقدان الوارد.
         </p>
         <div class="stats">
-          <div class="stat"><b id="stat-domains">6</b><span>available domains</span></div>
-          <div class="stat"><b>∞</b><span>address generation</span></div>
-          <div class="stat"><b>3 / 24h</b><span>outbound replies</span></div>
-          <div class="stat"><b id="stat-ver">2.0.0</b><span>service version</span></div>
+          <div class="stat"><b id="stat-domains">4</b><span data-i18n="statDomains">نطاقات متاحة</span></div>
+          <div class="stat"><b>∞</b><span data-i18n="statGen">إنشاء العناوين</span></div>
+          <div class="stat"><b>∞</b><span data-i18n="statSend">إرسال بلا حد</span></div>
+          <div class="stat"><b id="stat-ver">2.0.0</b><span data-i18n="statVer">إصدار الخدمة</span></div>
         </div>
       </div>
 
       <aside class="panel">
         <div class="tabs">
-          <button class="tab active" data-tab="generate" type="button">Generate</button>
-          <button class="tab" data-tab="login" type="button">Sign in</button>
+          <button class="tab active" data-tab="generate" type="button" data-i18n="tabGen">إنشاء</button>
+          <button class="tab" data-tab="login" type="button" data-i18n="tabLogin">دخول</button>
         </div>
 
         <div id="panel-generate">
-          <h2>Create a reusable mailbox</h2>
-          <p class="hint">Pick a domain, optionally claim a local-part, or mint a random one. Unlimited.</p>
+          <h2 data-i18n="createTitle">أنشئ صندوقاً قابلاً لإعادة الاستخدام</h2>
+          <p class="hint" data-i18n="createHint">اختر نطاقاً، حدّد الجزء المحلي إن شئت، أو ولّد عنواناً عشوائياً. بلا حد.</p>
 
           <div class="field">
-            <label>Domain</label>
+            <label data-i18n="domain">النطاق</label>
             <div class="domains" id="domains"></div>
           </div>
 
           <div class="field">
-            <label>Local-part (optional)</label>
+            <label data-i18n="localPart">الجزء المحلي (اختياري)</label>
             <div class="addr-input">
               <input id="local-part" type="text" placeholder="custom.name" autocomplete="off" spellcheck="false" />
               <span class="at">@</span>
-              <input type="text" value="selected domain" disabled style="opacity:.6" id="domain-mirror" />
+              <input type="text" value="edu.as" disabled style="opacity:.6" id="domain-mirror" />
             </div>
           </div>
 
           <div class="btn-row">
-            <button class="btn btn-lime" id="btn-gen" type="button">Reserve address</button>
-            <button class="btn btn-ghost" id="btn-random" type="button">Generate random</button>
+            <button class="btn btn-lime" id="btn-gen" type="button" data-i18n="reserve">حجز العنوان</button>
+            <button class="btn btn-ghost" id="btn-random" type="button" data-i18n="random">توليد عشوائي</button>
           </div>
           <p class="flash" id="gen-error"></p>
 
           <div class="issued" id="issued">
             <div class="mail" id="issued-email"></div>
             <div class="keybox" id="issued-key"></div>
-            <p class="warn-key">This access key is shown once. It is the only way to reopen this inbox from another device.</p>
+            <p class="warn-key" data-i18n="keyOnce">مفتاح الوصول يُعرض مرة واحدة. هو السبيل الوحيد لفتح هذا الصندوق من جهاز آخر.</p>
             <div class="btn-row" style="margin-top:12px">
-              <button class="btn btn-lime" id="open-inbox" type="button">Open inbox</button>
-              <button class="btn btn-ghost" id="copy-email" type="button">Copy address</button>
-              <button class="btn btn-ghost" id="copy-key" type="button">Copy key</button>
+              <button class="btn btn-lime" id="open-inbox" type="button" data-i18n="openInbox">فتح الصندوق</button>
+              <button class="btn btn-ghost" id="copy-email" type="button" data-i18n="copyAddr">نسخ العنوان</button>
+              <button class="btn btn-ghost" id="copy-key" type="button" data-i18n="copyKey">نسخ المفتاح</button>
             </div>
           </div>
         </div>
 
         <form id="panel-login" style="display:none">
-          <h2>Reopen a saved address</h2>
-          <p class="hint">Use the email plus the access key issued when it was created. Works across platforms.</p>
+          <h2 data-i18n="loginTitle">إعادة فتح عنوان محفوظ</h2>
+          <p class="hint" data-i18n="loginHint">استخدم البريد ومفتاح الوصول الصادر عند الإنشاء. يعمل عبر المنصات.</p>
           <div class="field">
-            <label>Email</label>
-            <input id="login-email" type="email" placeholder="silent.otter4821@persistmail.io" required />
+            <label data-i18n="email">البريد</label>
+            <input id="login-email" type="email" placeholder="name@edu.as" required />
           </div>
           <div class="field">
-            <label>Access key</label>
+            <label data-i18n="accessKey">مفتاح الوصول</label>
             <input id="login-key" type="password" placeholder="ptm_…" required />
           </div>
-          <button class="btn btn-lime btn-block" type="submit">Sign in to inbox</button>
+          <button class="btn btn-lime btn-block" type="submit" data-i18n="signIn">دخول الصندوق</button>
           <p class="flash" id="login-error"></p>
         </form>
       </aside>
     </section>
 
     <section class="vault">
-      <h3>Device vault · <span id="vault-count">0</span> addresses</h3>
+      <h3><span data-i18n="vault">خزنة الجهاز</span> · <span id="vault-count">0</span> <span data-i18n="addresses">عناوين</span></h3>
       <div class="vault-list" id="vault-list"></div>
     </section>
   </div>
-  <script type="module">
-    import { api } from '/js/api.js';
-    const mirror = document.getElementById('domain-mirror');
-    const obs = new MutationObserver(() => {
-      const active = document.querySelector('.domain.active .dn');
-      if (active) mirror.value = active.textContent;
-    });
-    const box = document.getElementById('domains');
-    obs.observe(box, { childList: true, subtree: true, attributes: true });
-    document.getElementById('domains').addEventListener('click', () => {
-      const active = document.querySelector('.domain.active .dn');
-      if (active) mirror.value = active.textContent;
-    });
-    try {
-      const d = await api.domains();
-      mirror.value = d.primary;
-    } catch { /* handled in landing.js */ }
-  </script>
   <script type="module" src="/js/landing.js"></script>
 </body>
 </html>

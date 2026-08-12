@@ -44,6 +44,7 @@ const messageSchema = new mongoose.Schema({
   body_html: { type: String, default: '' },
   headers_json: { type: String, default: null },
   in_reply_to: { type: String, default: null },
+  session_id: { type: String, default: null, index: true },
   created_at: { type: Number, required: true },
   is_read: { type: Boolean, default: false },
 }, { versionKey: false });

@@ -3,27 +3,20 @@ import { Message, now } from '../db/index.js';
 import { extractEmail, extractName, normalizeEmail } from '../utils/generate.js';
 import { findAddressByEmail } from './addresses.js';
 
-const listeners = new Set();
-
-export function subscribe(addressId, send) {
-  const rec = { addressId, send };
-  listeners.add(rec);
-  return () => listeners.delete(rec);
-}
-
-function emit(addressId, event, data) {
-  for (const rec of listeners) {
-    if (rec.addressId === addressId) {
-      try { rec.send(event, data); } catch { /* ignore hung sockets */ }
-    }
-  }
-}
-
 function asRow(doc) {
   if (!doc) return null;
   const o = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };
   o.id = o._id;
   return o;
+}
+
+export function scopedFilter(addressId, extra = {}) {
+  if (!addressId) {
+    const err = new Error('Session has no mailbox scope');
+    err.status = 401;
+    throw err;
+  }
+  return { address_id: addressId, ...extra };
 }
 
 export function publicMessage(row) {
@@ -32,6 +25,7 @@ export function publicMessage(row) {
     id: row.id || row._id,
     addressId: row.address_id,
     threadId: row.thread_id,
+    sessionId: row.session_id || null,
     direction: row.direction,
     from: row.from_addr,
     fromName: row.from_name || '',
@@ -47,6 +41,7 @@ export function publicMessage(row) {
 
 export async function storeMessage({
   addressId,
+  sessionId = null,
   direction,
   from,
   fromName,
@@ -59,11 +54,14 @@ export async function storeMessage({
   threadId,
   isRead = 0,
 }) {
-  const parent = inReplyTo ? asRow(await Message.findById(inReplyTo)) : null;
+  const parent = inReplyTo
+    ? asRow(await Message.findOne(scopedFilter(addressId, { _id: inReplyTo })))
+    : null;
   const id = uuid();
   const row = {
     _id: id,
     address_id: addressId,
+    session_id: sessionId || null,
     thread_id: threadId || parent?.thread_id || id,
     direction,
     from_addr: normalizeEmail(from),
@@ -78,9 +76,7 @@ export async function storeMessage({
     is_read: Boolean(isRead),
   };
   await Message.create(row);
-  const saved = asRow(await Message.findById(id));
-  emit(addressId, 'message', publicMessage(saved));
-  return saved;
+  return asRow(await Message.findOne(scopedFilter(addressId, { _id: id })));
 }
 
 export async function ingestInbound({ to, from, fromName, subject, bodyText, bodyHtml, headers, inReplyTo }) {
@@ -93,6 +89,7 @@ export async function ingestInbound({ to, from, fromName, subject, bodyText, bod
   }
   return storeMessage({
     addressId: address.id,
+    sessionId: null,
     direction: 'inbound',
     from: extractEmail(from) || from,
     fromName: fromName || extractName(from),
@@ -109,7 +106,7 @@ export async function insertWelcome(addressId, email) {
   return storeMessage({
     addressId,
     direction: 'inbound',
-    from: 'postmaster@persistmail.edu.as',
+    from: 'postmaster@edu.as',
     fromName: 'PersistMail',
     to: email,
     subject: 'Your persistent mailbox is live',
@@ -119,7 +116,7 @@ export async function insertWelcome(addressId, email) {
       'This address is persistent. Save your access key — it is the only way to reopen this inbox from another device or platform.',
       '',
       'You can receive mail over SMTP on port 2525 (or via the inject API in development).',
-      'Outbound replies are limited to 3 per 24 hours per address.',
+      'Outbound send and reply are unlimited. Delete any message from the client.',
       '',
       '— PersistMail v2.0.0',
     ].join('\n'),
@@ -129,7 +126,7 @@ export async function insertWelcome(addressId, email) {
 }
 
 export async function listInbox(addressId) {
-  const rows = (await Message.find({ address_id: addressId }).sort({ created_at: -1 })).map(asRow);
+  const rows = (await Message.find(scopedFilter(addressId)).sort({ created_at: -1 })).map(asRow);
   const threads = new Map();
   for (const row of rows) {
     if (!threads.has(row.thread_id)) {
@@ -150,11 +147,10 @@ export async function listInbox(addressId) {
       });
     }
   }
-  const unread = await Message.countDocuments({
-    address_id: addressId,
+  const unread = await Message.countDocuments(scopedFilter(addressId, {
     is_read: false,
     direction: 'inbound',
-  });
+  }));
   return {
     unread,
     threads: [...threads.values()],
@@ -163,13 +159,13 @@ export async function listInbox(addressId) {
 }
 
 export async function getThread(addressId, threadId) {
-  const rows = (await Message.find({ thread_id: threadId, address_id: addressId }).sort({ created_at: 1 })).map(asRow);
+  const rows = (await Message.find(scopedFilter(addressId, { thread_id: threadId })).sort({ created_at: 1 })).map(asRow);
   if (!rows.length) {
     const err = new Error('Thread not found');
     err.status = 404;
     throw err;
   }
-  await Message.updateMany({ thread_id: threadId, address_id: addressId }, { is_read: true });
+  await Message.updateMany(scopedFilter(addressId, { thread_id: threadId }), { is_read: true });
   return {
     threadId,
     subject: rows[0].subject || '(no subject)',
@@ -178,8 +174,8 @@ export async function getThread(addressId, threadId) {
 }
 
 export async function getOwnedMessage(addressId, messageId) {
-  const row = asRow(await Message.findById(messageId));
-  if (!row || row.address_id !== addressId) {
+  const row = asRow(await Message.findOne(scopedFilter(addressId, { _id: messageId })));
+  if (!row) {
     const err = new Error('Message not found');
     err.status = 404;
     throw err;
@@ -187,10 +183,15 @@ export async function getOwnedMessage(addressId, messageId) {
   return row;
 }
 
+export async function deleteMessage(addressId, messageId) {
+  const row = await getOwnedMessage(addressId, messageId);
+  await Message.deleteOne(scopedFilter(addressId, { _id: messageId }));
+  return { deleted: true, id: messageId, threadId: row.thread_id };
+}
+
 export async function messagesSince(addressId, since) {
-  const rows = await Message.find({
-    address_id: addressId,
+  const rows = await Message.find(scopedFilter(addressId, {
     created_at: { $gt: Number(since) || 0 },
-  }).sort({ created_at: 1 });
+  })).sort({ created_at: 1 });
   return rows.map((r) => publicMessage(asRow(r)));
 }

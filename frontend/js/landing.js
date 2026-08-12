@@ -1,4 +1,5 @@
 import { api, copyText } from './api.js';
+import { applyI18n, t, toggleLang } from './i18n.js';
 import { loadVault, upsertAddress, removeAddress } from './vault.js';
 
 const $ = (s) => document.querySelector(s);
@@ -20,7 +21,7 @@ function renderDomains() {
   box.innerHTML = state.domains.map((d) => `
     <button class="domain ${d.domain === state.selected ? 'active' : ''}" data-domain="${d.domain}" type="button">
       <span class="dn">${d.domain}</span>
-      <span class="tag ${d.primary ? 'primary' : ''}">${d.label}</span>
+      <span class="tag ${d.primary ? 'primary' : ''}">${d.primary ? t('primary') : t('free')} · MX ${d.mx || ''}</span>
     </button>
   `).join('');
   box.querySelectorAll('.domain').forEach((btn) => {
@@ -36,19 +37,19 @@ function renderVault() {
   const list = $('#vault-list');
   $('#vault-count').textContent = String(vault.length);
   if (!vault.length) {
-    list.innerHTML = '<div class="empty" style="min-height:120px">No saved addresses yet. Generate one — it stays on this device and on the server.</div>';
+    list.innerHTML = `<div class="empty" style="min-height:120px">${t('noVault')}</div>`;
     return;
   }
   list.innerHTML = vault.map((v) => `
     <div class="vault-item" data-email="${v.email}">
       <div>
         <div class="em">${v.email}</div>
-        <div class="meta">${v.isPrimary ? 'Primary domain' : 'Alternative domain'} · key …${(v.accessKey || '').slice(-4)} · ${new Date(v.createdAt).toLocaleString()}</div>
+        <div class="meta">${v.isPrimary ? t('primaryDom') : t('altDom')} · key …${(v.accessKey || '').slice(-4)} · ${new Date(v.createdAt).toLocaleString()}</div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-lime" data-act="open">Open inbox</button>
-        <button class="btn btn-ghost" data-act="copy">Copy</button>
-        <button class="btn btn-danger" data-act="forget">Forget</button>
+        <button class="btn btn-lime" data-act="open">${t('open')}</button>
+        <button class="btn btn-ghost" data-act="copy">${t('copy')}</button>
+        <button class="btn btn-danger" data-act="forget">${t('forget')}</button>
       </div>
     </div>
   `).join('');
@@ -59,8 +60,8 @@ function renderVault() {
     };
     row.querySelector('[data-act="copy"]').onclick = async () => {
       await copyText(email);
-      row.querySelector('[data-act="copy"]').textContent = 'Copied';
-      setTimeout(() => { row.querySelector('[data-act="copy"]').textContent = 'Copy'; }, 1200);
+      row.querySelector('[data-act="copy"]').textContent = t('copied');
+      setTimeout(() => { row.querySelector('[data-act="copy"]').textContent = t('copy'); }, 1200);
     };
     row.querySelector('[data-act="forget"]').onclick = () => {
       removeAddress(email);
@@ -85,7 +86,7 @@ async function generate() {
     $('#issued').classList.add('show');
     $('#issued-email').textContent = data.address.email;
     $('#issued-key').textContent = data.accessKey;
-    flash(err, 'Address reserved. Save the access key.', true);
+    flash(err, t('reserved'), true);
     renderVault();
     $('#local-part').value = '';
   } catch (e) {
@@ -115,13 +116,20 @@ async function login(e) {
 }
 
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach((tbtn) => tbtn.classList.toggle('active', tbtn.dataset.tab === name));
   $('#panel-generate').style.display = name === 'generate' ? 'block' : 'none';
   $('#panel-login').style.display = name === 'login' ? 'block' : 'none';
 }
 
 async function boot() {
+  applyI18n();
   renderVault();
+  $('#lang-toggle')?.addEventListener('click', () => {
+    toggleLang();
+    $('#lang-toggle').textContent = t('lang');
+    renderDomains();
+    renderVault();
+  });
   try {
     const d = await api.domains();
     state.domains = d.all;
@@ -129,8 +137,10 @@ async function boot() {
     state.selected = d.primary;
     renderDomains();
     $('#stat-domains').textContent = String(d.all.length);
+    const mirror = $('#domain-mirror');
+    if (mirror) mirror.value = d.primary;
   } catch {
-    $('#domains').innerHTML = '<p class="hint">Could not reach API. Is the server running?</p>';
+    $('#domains').innerHTML = `<p class="hint">${t('apiDown')}</p>`;
   }
   try {
     const h = await api.health();
@@ -143,20 +153,25 @@ async function boot() {
     generate();
   });
   $('#login-form').addEventListener('submit', login);
-  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+  document.querySelectorAll('.tab').forEach((tb) => tb.addEventListener('click', () => switchTab(tb.dataset.tab)));
   $('#copy-email').addEventListener('click', async () => {
     await copyText($('#issued-email').textContent);
-    $('#copy-email').textContent = 'Copied';
-    setTimeout(() => { $('#copy-email').textContent = 'Copy address'; }, 1200);
+    $('#copy-email').textContent = t('copied');
+    setTimeout(() => { $('#copy-email').textContent = t('copyAddr'); }, 1200);
   });
   $('#copy-key').addEventListener('click', async () => {
     await copyText($('#issued-key').textContent);
-    $('#copy-key').textContent = 'Copied';
-    setTimeout(() => { $('#copy-key').textContent = 'Copy key'; }, 1200);
+    $('#copy-key').textContent = t('copied');
+    setTimeout(() => { $('#copy-key').textContent = t('copyKey'); }, 1200);
   });
   $('#open-inbox').addEventListener('click', () => {
     const email = $('#issued-email').textContent;
     location.href = `/inbox.html?addr=${encodeURIComponent(email)}`;
+  });
+  $('#domains').addEventListener('click', () => {
+    const active = document.querySelector('.domain.active .dn');
+    const mirror = $('#domain-mirror');
+    if (active && mirror) mirror.value = active.textContent;
   });
 }
 

@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { Address, Session, now, toRow } from '../db/index.js';
-import { config, isManagedDomain } from '../config.js';
+import { config, isManagedDomain, mxFor } from '../config.js';
 import {
   hintKey,
   normalizeEmail,
@@ -165,11 +165,16 @@ export function listDomains() {
   return {
     primary: config.primaryDomain,
     alternatives: config.altDomains,
-    all: config.domains.map((domain) => ({
-      domain,
-      primary: domain === config.primaryDomain,
-      type: domain === config.primaryDomain ? 'primary' : 'free',
-      label: domain === config.primaryDomain ? 'Primary' : 'Free alternative',
-    })),
+    all: config.domains.map((domain) => {
+      const rec = mxFor(domain) || {};
+      return {
+        domain,
+        primary: domain === config.primaryDomain,
+        type: domain === config.primaryDomain ? 'primary' : 'free',
+        label: domain === config.primaryDomain ? 'Primary' : 'Free alternative',
+        mx: rec.mx || `mx.${domain}`,
+        priority: rec.priority || 20,
+      };
+    }),
   };
 }

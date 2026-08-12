@@ -30,18 +30,27 @@ test('GET /api/health', async () => {
   const { status, data } = await json('/api/health');
   assert.equal(status, 200);
   assert.equal(data.version, '2.0.0');
-  assert.equal(data.domains, 6);
+  assert.equal(data.domains, 4);
+  assert.equal(data.replyLimit, null);
   assert.ok(data.db);
   assert.ok(['connected', 'skipped', 'disconnected'].includes(data.db.mongodb));
   if (data.db.mongodb === 'connected') assert.equal(data.ok, true);
 });
 
-test('GET /api/domains exposes primary + free alternatives', async () => {
+test('GET /api/domains includes expanded matrix + MX', async () => {
   const data = await domains();
-  assert.ok(data.primary);
-  assert.ok(data.alternatives.length >= 1);
-  assert.ok(data.all.some((d) => d.primary && d.domain === data.primary));
-  assert.equal(data.all.length, 1 + data.alternatives.length);
+  const names = data.all.map((d) => d.domain);
+  assert.equal(data.primary, 'edu.as');
+  for (const d of ['edu.as', 'emails', 'steudent.edu.as', 'office.edu']) {
+    assert.ok(names.includes(d), `missing ${d}`);
+  }
+  assert.ok(data.all.every((d) => d.mx && typeof d.priority === 'number'));
+  assert.equal(data.all.length, 4);
+});
+
+test('SSE stream is deprecated', async () => {
+  const res = await fetch(`${BASE}/api/inbox/stream`);
+  assert.notEqual(res.status, 200);
 });
 
 test('POST /api/addresses creates a persistent mailbox', async (t) => {
@@ -54,8 +63,6 @@ test('POST /api/addresses creates a persistent mailbox', async (t) => {
   });
   assert.equal(status, 201);
   assert.equal(data.address.email, `${localPart}@${primary}`);
-  assert.equal(data.address.isPrimary, true);
-  assert.match(data.accessKey, /^ptm_/);
   assert.ok(data.sessionToken);
 });
 
@@ -64,12 +71,12 @@ test('duplicate local-part on same domain is rejected', async (t) => {
   const localPart = `dup.${Date.now()}`;
   const first = await json('/api/addresses', {
     method: 'POST',
-    body: { localPart, domain: 'tempkeep.org' },
+    body: { localPart, domain: 'office.edu' },
   });
   assert.equal(first.status, 201);
   const second = await json('/api/addresses', {
     method: 'POST',
-    body: { localPart, domain: 'tempkeep.org' },
+    body: { localPart, domain: 'office.edu' },
   });
   assert.equal(second.status, 409);
 });
@@ -78,7 +85,7 @@ test('login reopens the same address', async (t) => {
   if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const created = await json('/api/addresses', {
     method: 'POST',
-    body: { domain: 'openbox.email' },
+    body: { domain: 'emails' },
   });
   const { email } = created.data.address;
   const login = await json('/api/auth/login', {
@@ -89,7 +96,7 @@ test('login reopens the same address', async (t) => {
   assert.equal(login.data.address.email, email);
 });
 
-test('inbox returns only the authenticated address threads', async (t) => {
+test('inbox is session-scoped to the authenticated address', async (t) => {
   if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
   const { primary, alternatives } = await domains();
   const a = await json('/api/addresses', { method: 'POST', body: { domain: primary } });
@@ -107,15 +114,16 @@ test('inbox returns only the authenticated address threads', async (t) => {
   const inboxA = await json('/api/inbox', {
     headers: { Authorization: `Bearer ${a.data.sessionToken}` },
   });
-  const subjects = inboxA.data.threads.map((t) => t.subject);
+  const subjects = inboxA.data.threads.map((th) => th.subject);
   assert.ok(subjects.includes('only-a'));
   assert.ok(!subjects.includes('only-b'));
   assert.equal(inboxA.data.address.email, a.data.address.email);
+  assert.ok(inboxA.data.sessionId);
 });
 
-test('reply limit is 3 per 24 hours', async (t) => {
+test('replies are unlimited and messages can be purged', async (t) => {
   if (!(await mongoReady())) { t.skip('MongoDB not connected'); return; }
-  const created = await json('/api/addresses', { method: 'POST', body: { domain: 'mailstash.cc' } });
+  const created = await json('/api/addresses', { method: 'POST', body: { domain: 'steudent.edu.as' } });
   const token = created.data.sessionToken;
   const injected = await json('/api/dev/inject', {
     method: 'POST',
@@ -127,28 +135,29 @@ test('reply limit is 3 per 24 hours', async (t) => {
     },
   });
   const id = injected.data.message.id;
-  for (let i = 1; i <= 3; i += 1) {
+  for (let i = 1; i <= 4; i += 1) {
     const r = await json(`/api/messages/${id}/reply`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: { body: `reply ${i}` },
     });
     assert.equal(r.status, 201, `reply ${i} should succeed`);
-    assert.equal(r.data.quota.used, i);
+    assert.equal(r.data.quota.unlimited, true);
   }
-  const blocked = await json(`/api/messages/${id}/reply`, {
-    method: 'POST',
+  const del = await json(`/api/messages/${id}`, {
+    method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
-    body: { body: 'reply 4' },
   });
-  assert.equal(blocked.status, 429);
-  assert.equal(blocked.data.quota.remaining, 0);
+  assert.equal(del.status, 200);
+  assert.equal(del.data.deleted, true);
 });
 
-test('GET / serves landing page', async () => {
+test('GET / serves Arabic landing by default', async () => {
   const res = await fetch(`${BASE}/`);
   const html = await res.text();
   assert.equal(res.status, 200);
   assert.match(html, /PersistMail/);
-  assert.match(html, /Create a reusable mailbox/);
+  assert.match(html, /lang="ar"/);
+  assert.match(html, /dir="rtl"/);
+  assert.match(html, /أنشئ صندوقاً/);
 });

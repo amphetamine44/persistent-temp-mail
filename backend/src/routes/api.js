@@ -11,6 +11,7 @@ import {
   publicAddress,
 } from '../services/addresses.js';
 import {
+  deleteMessage,
   getOwnedMessage,
   getThread,
   ingestInbound,
@@ -18,9 +19,8 @@ import {
   listInbox,
   messagesSince,
   publicMessage,
-  subscribe,
 } from '../services/mail.js';
-import { replyQuota, sendReply } from '../services/replies.js';
+import { composeSend, replyQuota, sendReply } from '../services/replies.js';
 
 export const api = Router();
 
@@ -39,6 +39,7 @@ api.get('/health', (_req, res) => {
     domains: config.domains.length,
     serverless: Boolean(process.env.VERCEL),
     db: { mongodb },
+    replyLimit: config.replyLimit,
   });
 });
 
@@ -76,6 +77,7 @@ api.post('/auth/logout', requireAuth, async (req, res) => {
 api.get('/me', requireAuth, async (req, res) => {
   res.json({
     address: publicAddress(req.address),
+    sessionId: req.sessionId,
     quota: await replyQuota(req.address.id),
   });
 });
@@ -83,6 +85,7 @@ api.get('/me', requireAuth, async (req, res) => {
 api.get('/inbox', requireAuth, async (req, res) => {
   res.json({
     address: publicAddress(req.address),
+    sessionId: req.sessionId,
     quota: await replyQuota(req.address.id),
     ...(await listInbox(req.address.id)),
   });
@@ -92,30 +95,9 @@ api.get('/inbox/poll', requireAuth, async (req, res) => {
   const since = Number(req.query.since || 0);
   res.json({
     now: Date.now(),
+    sessionId: req.sessionId,
     messages: await messagesSince(req.address.id, since),
     quota: await replyQuota(req.address.id),
-  });
-});
-
-api.get('/inbox/stream', requireAuth, (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-
-  const send = (event, data) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  send('hello', { addressId: req.address.id, at: Date.now() });
-  const unsub = subscribe(req.address.id, send);
-  const ping = setInterval(() => send('ping', { at: Date.now() }), 25000);
-
-  req.on('close', () => {
-    clearInterval(ping);
-    unsub();
   });
 });
 
@@ -139,16 +121,39 @@ api.get('/messages/:id', requireAuth, async (req, res) => {
   }
 });
 
-api.post('/messages/:id/reply', requireAuth, limit(12, 60_000, 'reply'), async (req, res) => {
+api.delete('/messages/:id', requireAuth, async (req, res) => {
+  try {
+    res.json(await deleteMessage(req.address.id, req.params.id));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+api.post('/messages/:id/reply', requireAuth, limit(60, 60_000, 'reply'), async (req, res) => {
   try {
     const result = await sendReply(req.address, {
       messageId: req.params.id,
       body: req.body?.body,
       subject: req.body?.subject,
+      sessionId: req.sessionId,
     });
     res.status(201).json(result);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message, quota: err.quota });
+  }
+});
+
+api.post('/send', requireAuth, limit(60, 60_000, 'send'), async (req, res) => {
+  try {
+    const result = await composeSend(req.address, {
+      to: req.body?.to,
+      subject: req.body?.subject,
+      body: req.body?.body,
+      sessionId: req.sessionId,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

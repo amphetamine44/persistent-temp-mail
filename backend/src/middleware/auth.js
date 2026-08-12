@@ -14,6 +14,7 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Session expired or invalid. Sign in with your address and access key.' });
     }
     req.sessionToken = token;
+    req.sessionId = session.token;
     req.address = await getAddress(session.address_id);
     if (!req.address) {
       return res.status(401).json({ error: 'Address no longer exists' });
